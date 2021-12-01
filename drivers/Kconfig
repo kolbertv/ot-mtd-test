@@ -1,5 +1,1 @@
-menu "Device Drivers"
-
 rsource "battery/Kconfig"
-
-endmenu
