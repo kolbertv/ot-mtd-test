@@ -31,28 +31,44 @@ static struct k_work on_disconnect_work;
 
 mtd_mode_toggle_cb_t on_mtd_mode_toggle;
 
+static struct k_work timer_send_work;
+static struct k_timer my_timer;
+
 /* Options supported by the server */
-static const char *const light_option[] = { LIGHT_URI_PATH, NULL };
-static const char *const provisioning_option[] = { PROVISIONING_URI_PATH,
-						   NULL };
+static const char *const light_option[] = {LIGHT_URI_PATH, NULL};
+static const char *const provisioning_option[] = {PROVISIONING_URI_PATH,
+												  NULL};
 
 /* Thread multicast mesh local address */
 static struct sockaddr_in6 multicast_local_addr = {
 	.sin6_family = AF_INET6,
 	.sin6_port = htons(COAP_PORT),
-	.sin6_addr.s6_addr = { 0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-			       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01 },
-	.sin6_scope_id = 0U
-};
+	.sin6_addr.s6_addr = {0xff, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+						  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01},
+	.sin6_scope_id = 0U};
 
 /* Variable for storing server address acquiring in provisioning handshake */
 static char unique_local_addr_str[INET6_ADDRSTRLEN];
 static struct sockaddr_in6 unique_local_addr = {
 	.sin6_family = AF_INET6,
 	.sin6_port = htons(COAP_PORT),
-	.sin6_addr.s6_addr = {0, },
-	.sin6_scope_id = 0U
-};
+	.sin6_addr.s6_addr = {
+		0,
+	},
+	.sin6_scope_id = 0U};
+
+static void my_timer_send_work_handler(struct k_work *item)
+{
+
+		battery_start();
+
+		LOG_INF("Power: %d mV", battery_get_mv());
+}
+
+static void my_timer_handler(struct k_timer *dummy)
+{
+	k_work_submit(&timer_send_work);
+}
 
 static bool is_mtd_in_med_mode(otInstance *instance)
 {
@@ -65,11 +81,13 @@ static void poll_period_response_set(void)
 
 	otInstance *instance = openthread_get_default_instance();
 
-	if (is_mtd_in_med_mode(instance)) {
+	if (is_mtd_in_med_mode(instance))
+	{
 		return;
 	}
 
-	if (!poll_period) {
+	if (!poll_period)
+	{
 		poll_period = otLinkGetPollPeriod(instance);
 
 		error = otLinkSetPollPeriod(instance, RESPONSE_POLL_PERIOD);
@@ -84,11 +102,13 @@ static void poll_period_restore(void)
 	otError error;
 	otInstance *instance = openthread_get_default_instance();
 
-	if (is_mtd_in_med_mode(instance)) {
+	if (is_mtd_in_med_mode(instance))
+	{
 		return;
 	}
 
-	if (poll_period) {
+	if (poll_period)
+	{
 		error = otLinkSetPollPeriod(instance, poll_period);
 		__ASSERT_NO_MSG(error == OT_ERROR_NONE);
 
@@ -98,8 +118,8 @@ static void poll_period_restore(void)
 }
 
 static int on_provisioning_reply(const struct coap_packet *response,
-				 struct coap_reply *reply,
-				 const struct sockaddr *from)
+								 struct coap_reply *reply,
+								 const struct sockaddr *from)
 {
 	int ret = 0;
 	const uint8_t *payload;
@@ -111,7 +131,8 @@ static int on_provisioning_reply(const struct coap_packet *response,
 	payload = coap_packet_get_payload(response, &payload_size);
 
 	if (payload == NULL ||
-	    payload_size != sizeof(unique_local_addr.sin6_addr)) {
+		payload_size != sizeof(unique_local_addr.sin6_addr))
+	{
 		LOG_ERR("Received data is invalid");
 		ret = -EINVAL;
 		goto exit;
@@ -120,7 +141,8 @@ static int on_provisioning_reply(const struct coap_packet *response,
 	memcpy(&unique_local_addr.sin6_addr, payload, payload_size);
 
 	if (!inet_ntop(AF_INET6, payload, unique_local_addr_str,
-		       INET6_ADDRSTRLEN)) {
+				   INET6_ADDRSTRLEN))
+	{
 		LOG_ERR("Received data is not IPv6 address: %d", errno);
 		ret = -errno;
 		goto exit;
@@ -129,7 +151,8 @@ static int on_provisioning_reply(const struct coap_packet *response,
 	LOG_INF("Received peer address: %s", log_strdup(unique_local_addr_str));
 
 exit:
-	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED)) {
+	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED))
+	{
 		poll_period_restore();
 	}
 
@@ -142,17 +165,18 @@ static void toggle_one_light(struct k_work *item)
 
 	ARG_UNUSED(item);
 
-	if (unique_local_addr.sin6_addr.s6_addr16[0] == 0) {
+	if (unique_local_addr.sin6_addr.s6_addr16[0] == 0)
+	{
 		LOG_WRN("Peer address not set. Activate 'provisioning' option "
-			"on the server side");
+				"on the server side");
 		return;
 	}
 
 	LOG_INF("Send 'light' request to: %s",
-		log_strdup(unique_local_addr_str));
+			log_strdup(unique_local_addr_str));
 	coap_send_request(COAP_METHOD_PUT,
-			  (const struct sockaddr *)&unique_local_addr,
-			  light_option, &payload, sizeof(payload), NULL);
+					  (const struct sockaddr *)&unique_local_addr,
+					  light_option, &payload, sizeof(payload), NULL);
 }
 
 static void toggle_mesh_lights(struct k_work *item)
@@ -161,29 +185,28 @@ static void toggle_mesh_lights(struct k_work *item)
 
 	ARG_UNUSED(item);
 
-	command = ((command == THREAD_COAP_UTILS_LIGHT_CMD_OFF) ?
-			   THREAD_COAP_UTILS_LIGHT_CMD_ON :
-			   THREAD_COAP_UTILS_LIGHT_CMD_OFF);
+	command = ((command == THREAD_COAP_UTILS_LIGHT_CMD_OFF) ? THREAD_COAP_UTILS_LIGHT_CMD_ON : THREAD_COAP_UTILS_LIGHT_CMD_OFF);
 
 	LOG_INF("Send multicast mesh 'light' request");
 	coap_send_request(COAP_METHOD_PUT,
-			  (const struct sockaddr *)&multicast_local_addr,
-			  light_option, &command, sizeof(command), NULL);
+					  (const struct sockaddr *)&multicast_local_addr,
+					  light_option, &command, sizeof(command), NULL);
 }
 
 static void send_provisioning_request(struct k_work *item)
 {
 	ARG_UNUSED(item);
 
-	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED)) {
+	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED))
+	{
 		/* decrease the polling period for higher responsiveness */
 		poll_period_response_set();
 	}
 
 	LOG_INF("Send 'provisioning' request");
 	coap_send_request(COAP_METHOD_GET,
-			  (const struct sockaddr *)&multicast_local_addr,
-			  provisioning_option, NULL, 0u, on_provisioning_reply);
+					  (const struct sockaddr *)&multicast_local_addr,
+					  provisioning_option, NULL, 0u, on_provisioning_reply);
 }
 
 static void toggle_minimal_sleepy_end_device(struct k_work *item)
@@ -200,9 +223,12 @@ static void toggle_minimal_sleepy_end_device(struct k_work *item)
 	error = otThreadSetLinkMode(context->instance, mode);
 	openthread_api_mutex_unlock(context);
 
-	if (error != OT_ERROR_NONE) {
+	if (error != OT_ERROR_NONE)
+	{
 		LOG_ERR("Failed to set MLE link mode configuration");
-	} else {
+	}
+	else
+	{
 		on_mtd_mode_toggle(mode.mRxOnWhenIdle);
 	}
 }
@@ -218,8 +244,10 @@ static void on_thread_state_changed(uint32_t flags, void *context)
 {
 	struct openthread_context *ot_context = context;
 
-	if (flags & OT_CHANGED_THREAD_ROLE) {
-		switch (otThreadGetDeviceRole(ot_context->instance)) {
+	if (flags & OT_CHANGED_THREAD_ROLE)
+	{
+		switch (otThreadGetDeviceRole(ot_context->instance))
+		{
 		case OT_DEVICE_ROLE_CHILD:
 		case OT_DEVICE_ROLE_ROUTER:
 		case OT_DEVICE_ROLE_LEADER:
@@ -239,16 +267,19 @@ static void on_thread_state_changed(uint32_t flags, void *context)
 
 static void submit_work_if_connected(struct k_work *work)
 {
-	if (is_connected) {
+	if (is_connected)
+	{
 		k_work_submit(work);
-	} else {
+	}
+	else
+	{
 		LOG_INF("Connection is broken");
 	}
 }
 
 void coap_client_utils_init(ot_connection_cb_t on_connect,
-			    ot_disconnection_cb_t on_disconnect,
-			    mtd_mode_toggle_cb_t on_toggle)
+							ot_disconnection_cb_t on_disconnect,
+							mtd_mode_toggle_cb_t on_toggle)
 {
 	on_mtd_mode_toggle = on_toggle;
 
@@ -260,12 +291,19 @@ void coap_client_utils_init(ot_connection_cb_t on_connect,
 	k_work_init(&multicast_light_work, toggle_mesh_lights);
 	k_work_init(&provisioning_work, send_provisioning_request);
 
+	k_work_init(&timer_send_work, my_timer_send_work_handler); 
+	k_timer_init(&my_timer, my_timer_handler, NULL); 
+
+
 	openthread_set_state_changed_cb(on_thread_state_changed);
 	openthread_start(openthread_get_default_context());
 
-	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED)) {
+	k_timer_start(&my_timer, K_SECONDS(5), K_SECONDS(10)); 
+
+	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED))
+	{
 		k_work_init(&toggle_MTD_SED_work,
-			    toggle_minimal_sleepy_end_device);
+					toggle_minimal_sleepy_end_device);
 		update_device_state();
 	}
 }
@@ -287,7 +325,8 @@ void coap_client_send_provisioning_request(void)
 
 void coap_client_toggle_minimal_sleepy_end_device(void)
 {
-	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED)) {
+	if (IS_ENABLED(CONFIG_OPENTHREAD_MTD_SED))
+	{
 		k_work_submit(&toggle_MTD_SED_work);
 	}
 }
