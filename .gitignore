@@ -24,3 +24,8 @@ ext/mkinstalldirs
 ext/run-tests.php
 ext/.deps
 ext/libtool
+build/
+build_1/
+build_2/
+build_3/
+

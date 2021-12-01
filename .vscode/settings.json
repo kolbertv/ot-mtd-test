@@ -1,0 +1,11 @@
+{
+  "nrf-connect.topdir": "c:\\ncs\\v1.7.1",
+  "nrf-connect.toolchain.path": "c:\\ncs\\v1.7.1\\toolchain",
+  "nrf-connect.applications": [
+    "c:\\ncs\\test\\ot-mtd-test"
+  ],
+  "restructuredtext.confPath": "",
+  "files.associations": {
+    "battery.h": "c"
+  }
+}
